@@ -1,36 +1,44 @@
 #!/bin/bash
 
-# Para o script se houver qualquer erro (assim você não acha que instalou se falhar)
+# Para o script imediatamente se houver erro
 set -e
 
-echo ">>> 🚀 INICIANDO INSTALAÇÃO DO ECHO TUTOR (S23 ULTRA) <<<"
+echo ">>> 🚀 INICIANDO INSTALAÇÃO DO ECHO TUTOR (S23 ULTRA - FIX FFmpeg 7) <<<"
 
-# 1. Atualizar Termux e Instalar Dependências do Sistema
+# 1. Atualizar Termux e Instalar Dependências
 echo ">>> [1/6] Atualizando pacotes do sistema..."
 pkg update -y && pkg upgrade -y
-# ADICIONADO: 'pkg-config' (essencial para o erro do av) e 'libjpeg-turbo' (para evitar erros de imagem)
+# Adicionamos pkg-config e libjpeg-turbo para garantir compatibilidade
 pkg install python git rust binutils build-essential cmake clang libopenblas libandroid-execinfo ffmpeg wget tar ninja python-numpy pkg-config libjpeg-turbo -y
 
-# 2. Configurar Ambiente Virtual Python
+# 2. Configurar Ambiente Virtual
 echo ">>> [2/6] Criando ambiente virtual Python..."
 if [ ! -d "venv" ]; then
-    # Usa --system-site-packages para aproveitar o numpy e outros pacotes do Termux
+    # --system-site-packages usa o numpy pré-instalado do Termux (evita erro de compilação)
     python -m venv venv --system-site-packages
-    echo "Ambiente criado."
 fi
 source venv/bin/activate
 
-# 3. Instalar Bibliotecas Python
+# 3. Instalar Bibliotecas Python (A CIRURGIA COMEÇA AQUI)
 echo ">>> [3/6] Instalando bibliotecas..."
 pip install --upgrade pip wheel
 
-# --- CORREÇÃO CRÍTICA DO ERRO 'AV' ---
-echo ">>> Instalando PyAV compatível com FFmpeg 7..."
-# Força versão recente que suporta o FFmpeg novo do Termux
+echo ">>> 🔧 Aplicando correção para FFmpeg 7..."
+
+# PASSO A: Força a instalação do PyAV moderno (compatível com Termux novo)
+# A versão 13+ suporta FFmpeg 7.0
 pip install "av>=13.0.0" --no-binary av
 
-# Instala o restante (o faster-whisper vai usar o 'av' que acabamos de instalar)
-pip install -r requirements.txt
+# PASSO B: Instala o faster-whisper SEM DEPENDÊNCIAS
+# Isso impede que ele tente baixar o 'av' velho e quebre tudo
+pip install faster-whisper --no-deps
+
+# PASSO C: Instala manualmente os amigos do faster-whisper que ficaram faltando
+# (Já que usamos --no-deps, precisamos instalar estes na mão)
+pip install ctranslate2 huggingface-hub tokenizers onnxruntime
+
+# PASSO D: Instala o resto do app
+pip install gradio soundfile thefuzz levenshtein requests
 
 echo ">>> Compilando Llama.cpp (Otimizado para Snapdragon)..."
 CMAKE_ARGS="-DGGML_OPENBLAS=on" pip install llama-cpp-python --force-reinstall --upgrade --no-cache-dir
@@ -41,10 +49,10 @@ mkdir -p models/piper
 
 # Llama-3 (Cérebro)
 if [ ! -f "models/llama-3-8b.gguf" ]; then
-    echo "Baixando Llama-3 (Isso pode demorar)..."
+    echo "Baixando Llama-3 (Isso demora)..."
     wget https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf -O models/llama-3-8b.gguf
 else
-    echo "Llama-3 já existe. Pulando download."
+    echo "Llama-3 já baixado."
 fi
 
 # Piper (Motor de Voz)
@@ -68,46 +76,35 @@ if [ ! -f "models/piper/en_US-amy-medium.onnx" ]; then
     wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json -O models/piper/en_US-amy-medium.onnx.json
 fi
 
-# 5. Criar o inicializador start.sh
+# 5. Criar inicializador
 echo ">>> [5/6] Criando script de inicialização..."
 echo '#!/bin/bash
 source venv/bin/activate
 python app.py' > start.sh
 chmod +x start.sh
 
-# 6. CONFIGURAÇÃO AUTOMÁTICA DO WIDGET
-echo ">>> [6/6] Configurando Atalho na Tela Inicial..."
-
+# 6. Widget Automático
+echo ">>> [6/6] Configurando Widget..."
 DIR_ATUAL=$(pwd)
-
-# Script Python para criar o atalho com segurança
 cat <<EOF > setup_widget.py
 import os
 import stat
-
 atalho_dir = os.path.expanduser("~/.shortcuts")
 atalho_path = os.path.join(atalho_dir, "Professor")
 projeto_dir = "$DIR_ATUAL"
-
 if not os.path.exists(atalho_dir):
     os.makedirs(atalho_dir)
-
 conteudo = f"#!/bin/bash\ncd {projeto_dir} && ./start.sh\n"
 with open(atalho_path, "w") as f:
     f.write(conteudo)
-
 st = os.stat(atalho_path)
 os.chmod(atalho_path, st.st_mode | stat.S_IEXEC)
-print(f"✅ Widget criado apontando para: {projeto_dir}")
+print(f"✅ Widget criado em: {atalho_path}")
 EOF
-
 python setup_widget.py
 rm setup_widget.py
 
 echo " "
 echo "================================================"
-echo "🎉 TUDO PRONTO! AGORA FAÇA ISSO:"
-echo "1. Vá para a tela inicial do celular."
-echo "2. Adicione o Widget 'Termux:Widget'."
-echo "3. O botão 'Professor' já estará lá funcionando!"
+echo "🎉 TUDO PRONTO! TENTE RODAR O APP."
 echo "================================================"
