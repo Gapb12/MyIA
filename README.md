@@ -10,7 +10,10 @@ Um tutor de inglês que roda 100% offline no Android via Termux, utilizando Llam
 ## Instalação Rápida (One-Command)
 
 1. Abra o Termux.
-2. Clone este repositório:
+   '''
+   pkg update -y && pkg upgrade -y
+pkg install git -y
+3. Clone este repositório:
    ```bash
    git clone [https://github.com/Gapb12/MyIA]
    cd MyIA
