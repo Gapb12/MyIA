@@ -15,7 +15,7 @@ Um tutor de inglês que roda 100% offline no Android via Termux, utilizando Llam
    pkg install git -y
 3. Clone este repositório:
    ```bash
-   git clone [https://github.com/Gapb12/MyIA]
+   git clone https://github.com/Gapb12/MyIA
    cd MyIA
    chmod +x install.sh
    ./install.sh
