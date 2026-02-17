@@ -2,7 +2,7 @@
 set -e
 
 echo "================================================"
-echo "🚀 INSTALANDO ECHO TUTOR (ANDROID ARM64 - ESTÁVEL)"
+echo "🚀 INSTALANDO ECHO TUTOR (TERMUX ARM64 ESTÁVEL)"
 echo "================================================"
 
 # =========================
@@ -14,48 +14,45 @@ if [ "$PREFIX" != "/data/data/com.termux/files/usr" ]; then
 fi
 
 # =========================
-# 1. Atualizar pacotes base
+# 1. Atualizar sistema
 # =========================
-echo ">>> [1/8] Atualizando Termux..."
+echo ">>> [1/7] Atualizando Termux..."
 pkg update -y
-pkg install -y wget git clang cmake libopenblas pkg-config
+pkg upgrade -y
 
 # =========================
-# 2. Instalar Miniforge (se não existir)
+# 2. Instalar dependências nativas
 # =========================
-echo ">>> [2/8] Verificando Miniforge..."
+echo ">>> [2/7] Instalando dependências base..."
 
-if [ ! -d "$HOME/miniforge3" ]; then
-    echo "Instalando Miniforge ARM64..."
-    wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh -O miniforge.sh
-    bash miniforge.sh -b -p $HOME/miniforge3
-    rm miniforge.sh
+pkg install -y \
+python \
+git \
+wget \
+ffmpeg \
+clang \
+cmake \
+libopenblas \
+pkg-config
+
+# =========================
+# 3. Criar ambiente virtual
+# =========================
+echo ">>> [3/7] Criando ambiente virtual..."
+
+if [ -d "venv" ]; then
+  rm -rf venv
 fi
 
-source $HOME/miniforge3/bin/activate
+python -m venv venv
+source venv/bin/activate
+
+pip install --upgrade pip setuptools wheel
 
 # =========================
-# 3. Criar ambiente Python 3.11
+# 4. Instalar dependências Python
 # =========================
-echo ">>> [3/8] Criando ambiente Python 3.11..."
-
-if conda env list | grep -q echo; then
-    conda remove -n echo --all -y
-fi
-
-conda create -n echo python=3.11 -y
-conda activate echo
-
-# =========================
-# 4. Atualizar pip
-# =========================
-echo ">>> [4/8] Atualizando pip..."
-pip install --upgrade pip wheel setuptools
-
-# =========================
-# 5. Instalar dependências Python
-# =========================
-echo ">>> [5/8] Instalando dependências..."
+echo ">>> [4/7] Instalando dependências Python..."
 
 pip install \
 numpy \
@@ -64,63 +61,60 @@ soundfile \
 thefuzz \
 python-Levenshtein \
 requests \
-tokenizers==0.13.3 \
-ctranslate2==4.3.1 \
-faster-whisper==1.0.3 \
-huggingface-hub
+huggingface-hub \
+openai-whisper
 
 # =========================
-# 6. Compilar llama-cpp-python
+# 5. Compilar llama-cpp-python
 # =========================
-echo ">>> [6/8] Compilando llama-cpp-python (OpenBLAS + Native)..."
+echo ">>> [5/7] Compilando llama-cpp-python (OpenBLAS + Native)..."
 
 export CMAKE_ARGS="-DGGML_OPENBLAS=on -DGGML_NATIVE=on"
 export FORCE_CMAKE=1
 
-pip install llama-cpp-python --force-reinstall --upgrade --no-cache-dir
+pip install llama-cpp-python --no-cache-dir
 
 # =========================
-# 7. Baixar modelos
+# 6. Baixar modelos
 # =========================
-echo ">>> [7/8] Baixando modelos..."
+echo ">>> [6/7] Baixando modelos..."
 
 mkdir -p models/piper
 
 # Llama 3 8B Q4_K_S
 if [ ! -f "models/llama-3-8b.gguf" ]; then
-    echo "Baixando Llama 3 8B Q4_K_S..."
-    wget https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_S.gguf \
-    -O models/llama-3-8b.gguf
+  echo "Baixando Llama 3 8B..."
+  wget https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_S.gguf \
+  -O models/llama-3-8b.gguf
 fi
 
-# Piper ARM64
+# Piper
 if [ ! -f "models/piper/piper" ]; then
-    echo "Baixando Piper..."
-    wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_aarch64.tar.gz
-    tar -xvf piper_linux_aarch64.tar.gz -C models/
-    rm piper_linux_aarch64.tar.gz
-    mv models/piper_linux_aarch64/* models/piper/
-    rmdir models/piper_linux_aarch64
-    chmod +x models/piper/piper
+  wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_aarch64.tar.gz
+  tar -xvf piper_linux_aarch64.tar.gz -C models/
+  rm piper_linux_aarch64.tar.gz
+  mv models/piper_linux_aarch64/* models/piper/
+  rmdir models/piper_linux_aarch64
+  chmod +x models/piper/piper
 fi
 
-# Voz Amy
+# Voz
 if [ ! -f "models/piper/en_US-amy-medium.onnx" ]; then
-    wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx \
-    -O models/piper/en_US-amy-medium.onnx
-    wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json \
-    -O models/piper/en_US-amy-medium.onnx.json
+  wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx \
+  -O models/piper/en_US-amy-medium.onnx
+  wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json \
+  -O models/piper/en_US-amy-medium.onnx.json
 fi
 
 # =========================
-# 8. Criar start.sh
+# 7. Criar start.sh
 # =========================
-echo ">>> [8/8] Criando start.sh..."
+echo ">>> [7/7] Criando start.sh..."
 
 cat <<EOF > start.sh
 #!/bin/bash
-source \$HOME/miniforge3/bin/activate
-conda activate echo
+cd \$(dirname "\$0")
+source venv/bin/activate
 python app.py
 EOF
 
@@ -129,7 +123,6 @@ chmod +x start.sh
 echo ""
 echo "================================================"
 echo "✅ INSTALAÇÃO CONCLUÍDA"
-echo ""
-echo "Para iniciar:"
+echo "Execute:"
 echo "./start.sh"
 echo "================================================"
