@@ -1,0 +1,15 @@
+# Ignorar ambiente virtual
+venv/
+__pycache__/
+
+# Ignorar banco de dados local (seus erros são privados)
+*.db
+
+# Ignorar modelos pesados baixados
+models/
+*.gguf
+*.onnx
+*.tar.gz
+
+# Ignorar arquivos temporários de áudio
+*.wav
