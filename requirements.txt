@@ -2,3 +2,5 @@ faster-whisper
 gradio
 soundfile
 numpy
+thefuzz
+levenshtein
