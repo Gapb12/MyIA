@@ -1,28 +1,28 @@
 import gradio as gr
 from faster_whisper import WhisperModel
 from llama_cpp import Llama
-import subprocess
-import json
 import sqlite3
 import datetime
-import os
-import re
-import traceback
+import json
 import time
+import re
 import gc
 from thefuzz import fuzz
 
 # ================= CONFIG =================
+
 MODEL_PATH = "models/llama-3-8b.gguf"
-PIPER_BINARY = "./models/piper/piper"
-VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
 DB_NAME = "echo_tutor.db"
 
-LLM_IDLE_TIMEOUT = 300  # 5 minutos
-last_llm_use = time.time()
+PRON_THRESHOLD_STRICT = -0.55
+FUZZ_THRESHOLD = 93
+LLM_IDLE_TIMEOUT = 300
+
 llm = None
+last_llm_use = time.time()
 
 # ================= DATABASE =================
+
 conn = sqlite3.connect(DB_NAME, check_same_thread=False)
 c = conn.cursor()
 
@@ -35,217 +35,193 @@ CREATE TABLE IF NOT EXISTS learning_logs (
     error_type TEXT,
     explanation TEXT,
     review_count INTEGER DEFAULT 0,
+    success_streak INTEGER DEFAULT 0,
     next_review_date DATETIME,
     status TEXT DEFAULT 'ACTIVE'
 );
 """)
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS student_profile (
+    id INTEGER PRIMARY KEY CHECK (id=1),
+    grammar_errors INTEGER DEFAULT 0,
+    vocab_errors INTEGER DEFAULT 0,
+    pronunciation_errors INTEGER DEFAULT 0,
+    total_sentences INTEGER DEFAULT 0,
+    level TEXT DEFAULT 'A2'
+);
+""")
+
+c.execute("INSERT OR IGNORE INTO student_profile (id) VALUES (1)")
 conn.commit()
 
 # ================= MODELS =================
-print("Loading Whisper...")
+
 whisper = WhisperModel("base.en", device="cpu", compute_type="int8")
 
 def load_llm():
     global llm, last_llm_use
     if llm is None:
-        print("Loading LLM...")
-        llm = Llama(
-            model_path=MODEL_PATH,
-            n_ctx=2048,
-            n_gpu_layers=0,
-            verbose=False
-        )
+        llm = Llama(model_path=MODEL_PATH, n_ctx=4096, n_gpu_layers=0)
     last_llm_use = time.time()
 
-def check_llm_idle():
+def check_idle():
     global llm
     if llm and time.time() - last_llm_use > LLM_IDLE_TIMEOUT:
-        print("Unloading LLM (idle)...")
         llm = None
         gc.collect()
 
-# ================= UTILS =================
-def falar_piper(texto):
-    texto = re.sub(r'[^a-zA-Z0-9 .,?!]', '', texto)
-    output_file = f"temp_{int(time.time())}.wav"
+# ================= UTIL =================
 
-    cmd = f'echo "{texto}" | {PIPER_BINARY} --model {VOICE_MODEL} --output_file {output_file}'
-    subprocess.run(cmd, shell=True)
+def normalizar(txt):
+    txt = txt.lower()
+    txt = re.sub(r'[^\w\s]', '', txt)
+    return re.sub(r'\s+', ' ', txt).strip()
 
-    return output_file
+def next_review_interval(count):
+    intervals = [1,2,4,7,15,30]
+    return datetime.datetime.now() + datetime.timedelta(days=intervals[min(count,len(intervals)-1)])
 
-def normalizar(texto):
-    texto = texto.lower()
-    texto = re.sub(r'[^\w\s]', '', texto)
-    texto = re.sub(r'\s+', ' ', texto).strip()
-    return texto
+def get_level():
+    c.execute("SELECT grammar_errors, vocab_errors, pronunciation_errors, total_sentences FROM student_profile WHERE id=1")
+    g,v,p,t = c.fetchone()
 
-def calcular_proxima_revisao(review_count):
-    intervals = [1, 3, 7, 14, 30]
-    days = intervals[min(review_count, len(intervals)-1)]
-    return datetime.datetime.now() + datetime.timedelta(days=days)
+    if t < 20:
+        return "A2"
+    error_rate = (g+v+p)/max(t,1)
+
+    if error_rate > 0.5:
+        return "A2"
+    elif error_rate > 0.3:
+        return "B1"
+    elif error_rate > 0.15:
+        return "B2"
+    else:
+        return "C1"
 
 # ================= CORE =================
-def analisar_conversa(audio_path):
-    try:
-        check_llm_idle()
 
-        if not audio_path:
-            return "No audio.", None
+def analisar(audio_path):
+    check_idle()
 
-        segments, _ = whisper.transcribe(audio_path, beam_size=5)
-        segments = list(segments)
+    segments,_ = whisper.transcribe(audio_path)
+    segments=list(segments)
+    if not segments:
+        return "No speech detected."
 
-        if not segments:
-            return "No speech detected.", None
+    avg_logprob=sum(s.avg_logprob for s in segments)/len(segments)
 
-        avg_logprob = sum(s.avg_logprob for s in segments) / len(segments)
+    if avg_logprob < PRON_THRESHOLD_STRICT:
+        c.execute("UPDATE student_profile SET pronunciation_errors=pronunciation_errors+1 WHERE id=1")
+        conn.commit()
+        return "Pronunciation unclear. Repeat clearly."
 
-        if avg_logprob < -0.6:
-            return "⚠️ Speak more clearly.", falar_piper("Please speak more clearly.")
+    user_text=" ".join(s.text for s in segments).strip()
 
-        user_text = " ".join(s.text for s in segments).strip()
+    load_llm()
 
-        load_llm()
+    level=get_level()
 
-        system_prompt = """
+    system_prompt=f"""
 You are a strict English Tutor.
-Return ONLY valid JSON with this exact schema:
-{
+Student level: {level}.
+Return ONLY JSON:
+{{
  "reply": "string",
  "has_error": true/false,
  "correction": "string",
- "error_type": "grammar|pronunciation|vocab",
- "explanation": "string"
-}
-Do not write anything outside the JSON.
+ "error_type": "grammar|vocab|pronunciation",
+ "explanation": "short didactic explanation with example"
+}}
+Be pedagogical and precise.
 """
 
-        prompt = f"""<|begin_of_text|>
-<|start_header_id|>system<|end_header_id|>
-{system_prompt}
-<|eot_id|>
-<|start_header_id|>user<|end_header_id|>
-{user_text}
-<|eot_id|>
-<|start_header_id|>assistant<|end_header_id|>
-"""
+    prompt=f"{system_prompt}\nUser: {user_text}\nAssistant:"
 
-        output = llm(
-            prompt,
-            max_tokens=256,
-            temperature=0.0,
-            stop=["<|eot_id|>"],
-            echo=False
-        )
+    out=llm(prompt, max_tokens=300, temperature=0.1)
+    raw=out["choices"][0]["text"]
 
-        raw = output['choices'][0]['text']
-        json_str = raw[raw.find('{'):raw.rfind('}')+1]
-        data = json.loads(json_str)
+    data=json.loads(raw[raw.find("{"):raw.rfind("}")+1])
 
-        reply = data["reply"]
+    c.execute("UPDATE student_profile SET total_sentences=total_sentences+1 WHERE id=1")
 
-        if data["has_error"]:
-            correction = data["correction"]
-            explanation = data["explanation"]
+    reply=data["reply"]
 
-            next_review = calcular_proxima_revisao(0)
+    if data["has_error"]:
+        correction=data["correction"]
+        error_type=data["error_type"]
 
-            c.execute("""
-            INSERT INTO learning_logs 
-            (user_input, corrected_version, error_type, explanation, next_review_date)
-            VALUES (?, ?, ?, ?, ?)
-            """, (user_text, correction, data["error_type"], explanation, next_review))
-            conn.commit()
+        if error_type=="grammar":
+            c.execute("UPDATE student_profile SET grammar_errors=grammar_errors+1 WHERE id=1")
+        elif error_type=="vocab":
+            c.execute("UPDATE student_profile SET vocab_errors=vocab_errors+1 WHERE id=1")
 
-            reply += f"\n\n🛑 Correction: {correction}"
+        c.execute("""
+        INSERT INTO learning_logs
+        (user_input, corrected_version, error_type, explanation, next_review_date)
+        VALUES (?,?,?,?,?)
+        """,(user_text,correction,error_type,data["explanation"],next_review_interval(0)))
 
-        return f"You: {user_text}\nAI: {reply}", falar_piper(reply)
+        reply += f"\nCorrection: {correction}"
 
-    except Exception as e:
-        return f"Error: {str(e)}", None
+    conn.commit()
+    return f"You: {user_text}\nTutor: {reply}"
 
+# ================= REVIEW =================
 
-# ================= REVIEW MODE =================
-def carregar_exercicio():
+def revisar():
     c.execute("""
-    SELECT id, user_input, corrected_version, explanation
+    SELECT id,user_input,corrected_version,success_streak
     FROM learning_logs
-    WHERE next_review_date <= datetime('now')
+    WHERE next_review_date<=datetime('now')
     AND status='ACTIVE'
     ORDER BY next_review_date ASC
     LIMIT 1
     """)
+    return c.fetchone()
 
-    row = c.fetchone()
+def validar(audio_path,id_log):
+    segments,_=whisper.transcribe(audio_path)
+    tentativa=" ".join(s.text for s in segments).strip()
 
-    if not row:
-        return "No pending reviews 🎉", None, None
+    c.execute("SELECT corrected_version,review_count,success_streak FROM learning_logs WHERE id=?",(id_log,))
+    correto,count,streak=c.fetchone()
 
-    id_log, original, correcao, explicacao = row
+    ratio=fuzz.token_sort_ratio(normalizar(tentativa),normalizar(correto))
 
-    return (
-        f"Said: {original}\nCorrect: {correcao}\nTip: {explicacao}",
-        falar_piper(f"Repeat: {correcao}"),
-        id_log
-    )
-
-def validar_exercicio(audio_path, id_log):
-    if not audio_path or not id_log:
-        return "Record first.", None
-
-    segments, _ = whisper.transcribe(audio_path)
-    tentativa = " ".join(s.text for s in segments).strip()
-
-    c.execute("SELECT corrected_version, review_count FROM learning_logs WHERE id = ?", (id_log,))
-    row = c.fetchone()
-
-    if not row:
-        return "Data error.", None
-
-    correto, review_count = row
-
-    ratio = fuzz.ratio(normalizar(tentativa), normalizar(correto))
-
-    if ratio > 90:
-        novo_count = review_count + 1
-        proxima = calcular_proxima_revisao(novo_count)
+    if ratio>FUZZ_THRESHOLD:
+        streak+=1
+        count+=1
+        if streak>=3:
+            c.execute("UPDATE learning_logs SET status='MASTERED' WHERE id=?",(id_log,))
+            conn.commit()
+            return "Mastered."
 
         c.execute("""
         UPDATE learning_logs
-        SET review_count=?, next_review_date=?
+        SET review_count=?,success_streak=?,next_review_date=?
         WHERE id=?
-        """, (novo_count, proxima, id_log))
-        conn.commit()
+        """,(count,streak,next_review_interval(count),id_log))
 
-        return f"✅ Excellent ({ratio}%)", falar_piper("Perfect!")
+        conn.commit()
+        return f"Correct ({ratio}%)"
 
     else:
-        return f"❌ Try again ({ratio}%)", falar_piper("Try again.")
+        c.execute("""
+        UPDATE learning_logs
+        SET success_streak=0,next_review_date=?
+        WHERE id=?
+        """,(next_review_interval(0),id_log))
+        conn.commit()
+        return f"Incorrect ({ratio}%) Repeat again."
 
 # ================= UI =================
-with gr.Blocks(title="Echo Tutor Pro") as demo:
-    gr.Markdown("# Echo Tutor Pro")
 
-    with gr.Tabs():
-        with gr.TabItem("Conversation"):
-            inp = gr.Audio(sources=["microphone"], type="filepath")
-            out_txt = gr.Textbox()
-            out_aud = gr.Audio(autoplay=True)
-            gr.Button("Send").click(analisar_conversa, inp, [out_txt, out_aud])
+with gr.Blocks() as demo:
+    gr.Markdown("# Echo Tutor – Extreme Mode")
 
-        with gr.TabItem("Review"):
-            btn_load = gr.Button("Load Next")
-            id_h = gr.Number(visible=False)
-            lbl = gr.Textbox()
-            aud_ref = gr.Audio(autoplay=True)
-            inp_drill = gr.Audio(sources=["microphone"], type="filepath")
-            res_txt = gr.Textbox()
-            res_aud = gr.Audio(autoplay=True)
-            btn_check = gr.Button("Check")
+    audio=gr.Audio(sources=["microphone"],type="filepath")
+    out=gr.Textbox()
+    gr.Button("Analyze").click(analisar,audio,out)
 
-            btn_load.click(carregar_exercicio, None, [lbl, aud_ref, id_h])
-            btn_check.click(validar_exercicio, [inp_drill, id_h], [res_txt, res_aud])
-
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+demo.launch(server_name="0.0.0.0",server_port=7860)
