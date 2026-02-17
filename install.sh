@@ -3,20 +3,24 @@
 echo ">>> 🚀 INICIANDO INSTALAÇÃO DO ECHO TUTOR (S23 ULTRA) <<<"
 
 # 1. Atualizar Termux e Instalar Dependências do Sistema
+# CORREÇÃO: Adicionados 'ninja' e 'python-numpy' para evitar erro de compilação
 echo ">>> [1/6] Atualizando pacotes do sistema..."
 pkg update -y && pkg upgrade -y
-pkg install python git rust binutils build-essential cmake clang libopenblas libandroid-execinfo ffmpeg wget tar -y
+pkg install python git rust binutils build-essential cmake clang libopenblas libandroid-execinfo ffmpeg wget tar ninja python-numpy -y
 
 # 2. Configurar Ambiente Virtual Python
 echo ">>> [2/6] Criando ambiente virtual Python..."
 if [ ! -d "venv" ]; then
-    python -m venv venv
+    # Usa --system-site-packages para aproveitar o numpy instalado pelo pkg
+    python -m venv venv --system-site-packages
+    echo "Ambiente criado."
 fi
 source venv/bin/activate
 
 # 3. Instalar Bibliotecas Python
 echo ">>> [3/6] Instalando bibliotecas..."
 pip install --upgrade pip
+# Instala o resto das dependências
 pip install -r requirements.txt
 
 echo ">>> Compilando Llama.cpp (Otimizado para Snapdragon)..."
@@ -28,8 +32,10 @@ mkdir -p models/piper
 
 # Llama-3 (Cérebro)
 if [ ! -f "models/llama-3-8b.gguf" ]; then
-    echo "Baixando Llama-3..."
+    echo "Baixando Llama-3 (Isso pode demorar)..."
     wget https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf -O models/llama-3-8b.gguf
+else
+    echo "Llama-3 já existe. Pulando download."
 fi
 
 # Piper (Motor de Voz)
@@ -37,10 +43,13 @@ if [ ! -f "models/piper/piper" ]; then
     echo "Baixando motor de voz Piper..."
     wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_aarch64.tar.gz
     tar -xvf piper_linux_aarch64.tar.gz -C models/
+    rm piper_linux_aarch64.tar.gz
     if [ -d "models/piper_linux_aarch64" ]; then
         mv models/piper_linux_aarch64/* models/piper/
         rmdir models/piper_linux_aarch64
     fi
+else
+    echo "Piper já instalado."
 fi
 
 # Voz da Amy
@@ -57,38 +66,32 @@ source venv/bin/activate
 python app.py' > start.sh
 chmod +x start.sh
 
-# 6. CONFIGURAÇÃO AUTOMÁTICA DO WIDGET (A Mágica Nova)
+# 6. CONFIGURAÇÃO AUTOMÁTICA DO WIDGET
 echo ">>> [6/6] Configurando Atalho na Tela Inicial..."
 
-# Pega o caminho atual da pasta onde o script está rodando
 DIR_ATUAL=$(pwd)
 
-# Cria um script Python temporário para gerar o atalho com segurança (sem erro de aspas)
+# Script Python para criar o atalho com segurança
 cat <<EOF > setup_widget.py
 import os
 import stat
 
-# Define caminhos
 atalho_dir = os.path.expanduser("~/.shortcuts")
 atalho_path = os.path.join(atalho_dir, "Professor")
 projeto_dir = "$DIR_ATUAL"
 
-# Cria pasta .shortcuts se não existir
 if not os.path.exists(atalho_dir):
     os.makedirs(atalho_dir)
 
-# Escreve o conteúdo do atalho
 conteudo = f"#!/bin/bash\ncd {projeto_dir} && ./start.sh\n"
 with open(atalho_path, "w") as f:
     f.write(conteudo)
 
-# Torna executável
 st = os.stat(atalho_path)
 os.chmod(atalho_path, st.st_mode | stat.S_IEXEC)
 print(f"✅ Widget criado apontando para: {projeto_dir}")
 EOF
 
-# Roda o script e limpa
 python setup_widget.py
 rm setup_widget.py
 
