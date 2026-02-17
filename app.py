@@ -1,5 +1,5 @@
 import gradio as gr
-import whisper
+from faster_whisper import WhisperModel
 from llama_cpp import Llama
 import subprocess
 import json
@@ -8,18 +8,15 @@ import datetime
 import re
 from thefuzz import fuzz
 
-MODEL_PATH = "models/llama-3-3b.gguf"
-
+MODEL_PATH = "models/llama-3-3b.gguf"  # Use o leve 3B
 PIPER_BINARY = "./models/piper/piper"
 VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
 DB_NAME = "echo_tutor.db"
-
 SIMILARITY_THRESHOLD = 90
 
 # DATABASE
 conn = sqlite3.connect(DB_NAME, check_same_thread=False)
 c = conn.cursor()
-
 c.execute("""
 CREATE TABLE IF NOT EXISTS learning_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,19 +30,17 @@ CREATE TABLE IF NOT EXISTS learning_logs (
     next_review_date DATETIME
 )
 """)
-
 conn.commit()
 
 # MODELS
-whisper_model = whisper.load_model("base.en")
-
+whisper_model = WhisperModel("base.en", device="cpu", compute_type="int8")  # Mais eficiente
 llm = Llama(
     model_path=MODEL_PATH,
-    n_ctx=4096,
-    n_threads=8,
+    n_ctx=2048,  # Reduzi para caber melhor
+    n_threads=4,  # 4 threads para Snapdragon sem aquecer
     n_batch=512,
     n_gpu_layers=0,
-    verbose=False
+    verbose=True  # Ative verbose para debug erros
 )
 
 # TTS
@@ -53,17 +48,20 @@ def falar(texto):
     texto = re.sub(r'[^a-zA-Z0-9 .,?!]', '', texto)
     file = f"tts_{int(datetime.datetime.now().timestamp())}.wav"
     cmd = f'echo "{texto}" | {PIPER_BINARY} --model {VOICE_MODEL} --output_file {file}'
-    subprocess.run(cmd, shell=True)
-    return file
+    try:
+        subprocess.run(cmd, shell=True, check=True)
+        return file
+    except subprocess.CalledProcessError as e:
+        print(f"Erro no Piper: {e}")  # Debug
+        return None
 
 # ANALYSIS
 def analisar(audio_path):
     if not audio_path:
         return "No audio.", None
-
-    result = whisper_model.transcribe(audio_path)
-    user_text = result["text"].strip()
-
+    segments, info = whisper_model.transcribe(audio_path)
+    user_text = " ".join([s.text.strip() for s in segments]).strip()
+    print(f"Transcrito: {user_text}")  # Debug
     system_prompt = """
 You are a strict English tutor.
 Return ONLY JSON:
@@ -76,19 +74,15 @@ Return ONLY JSON:
   "explanation": ""
 }
 """
-
     prompt = f"{system_prompt}\nUser: {user_text}\nAssistant:"
-
-    output = llm(prompt, max_tokens=256)
-    raw = output['choices'][0]['text']
-
     try:
+        output = llm(prompt, max_tokens=256)
+        raw = output['choices'][0]['text']
         data = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
-    except:
-        return raw, falar(raw)
-
+    except Exception as e:
+        print(f"Erro no LLM: {e}")  # Debug
+        return str(e), None
     reply = data["reply"]
-
     if data["has_error"]:
         c.execute("""
         INSERT INTO learning_logs
@@ -100,18 +94,15 @@ Return ONLY JSON:
             data["error_type"],
             data["sub_type"],
             data["explanation"],
-            datetime.datetime.now()
+            datetime.datetime.now() + datetime.timedelta(days=1)  # Inicial SRS
         ))
         conn.commit()
-
         reply += f"\nCorrection: {data['correction']}"
-
     return f"You: {user_text}\nAI: {reply}", falar(reply)
 
 # UI
 with gr.Blocks(title="Echo Tutor") as demo:
     gr.Markdown("# Echo Tutor – Adaptive English")
-
     inp = gr.Audio(sources=["microphone"], type="filepath")
     out_txt = gr.Textbox()
     out_aud = gr.Audio(autoplay=True)
