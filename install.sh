@@ -1,17 +1,20 @@
 #!/bin/bash
 
+# Para o script se houver qualquer erro (assim você não acha que instalou se falhar)
+set -e
+
 echo ">>> 🚀 INICIANDO INSTALAÇÃO DO ECHO TUTOR (S23 ULTRA) <<<"
 
 # 1. Atualizar Termux e Instalar Dependências do Sistema
-# CORREÇÃO: Adicionados 'ninja' e 'python-numpy' para evitar erro de compilação
 echo ">>> [1/6] Atualizando pacotes do sistema..."
 pkg update -y && pkg upgrade -y
-pkg install python git rust binutils build-essential cmake clang libopenblas libandroid-execinfo ffmpeg wget tar ninja python-numpy -y
+# ADICIONADO: 'pkg-config' (essencial para o erro do av) e 'libjpeg-turbo' (para evitar erros de imagem)
+pkg install python git rust binutils build-essential cmake clang libopenblas libandroid-execinfo ffmpeg wget tar ninja python-numpy pkg-config libjpeg-turbo -y
 
 # 2. Configurar Ambiente Virtual Python
 echo ">>> [2/6] Criando ambiente virtual Python..."
 if [ ! -d "venv" ]; then
-    # Usa --system-site-packages para aproveitar o numpy instalado pelo pkg
+    # Usa --system-site-packages para aproveitar o numpy e outros pacotes do Termux
     python -m venv venv --system-site-packages
     echo "Ambiente criado."
 fi
@@ -19,8 +22,14 @@ source venv/bin/activate
 
 # 3. Instalar Bibliotecas Python
 echo ">>> [3/6] Instalando bibliotecas..."
-pip install --upgrade pip
-# Instala o resto das dependências
+pip install --upgrade pip wheel
+
+# --- CORREÇÃO CRÍTICA DO ERRO 'AV' ---
+echo ">>> Instalando PyAV compatível com FFmpeg 7..."
+# Força versão recente que suporta o FFmpeg novo do Termux
+pip install "av>=13.0.0" --no-binary av
+
+# Instala o restante (o faster-whisper vai usar o 'av' que acabamos de instalar)
 pip install -r requirements.txt
 
 echo ">>> Compilando Llama.cpp (Otimizado para Snapdragon)..."
