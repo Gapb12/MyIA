@@ -1,81 +1,60 @@
-import gradio as gr
-from faster_whisper import WhisperModel
-from llama_cpp import Llama
-import subprocess
-import json
-import sqlite3
-import datetime
-import os
-import re
+#!/bin/bash
 
-# CONFIGURAÇÃO
-MODEL_PATH = "models/llama-3-8b.gguf"
-PIPER_BINARY = "./models/piper/piper"
-VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
-DB_NAME = "echo_tutor.db"
+echo ">>> 🚀 INICIANDO INSTALAÇÃO DO ECHO TUTOR (S23 ULTRA) <<<"
 
-# BANCO DE DADOS
-conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS logs 
-             (id INTEGER PRIMARY KEY, user_text TEXT, correction TEXT, 
-              explanation TEXT, error_type TEXT, timestamp DATETIME)''')
-conn.commit()
+# 1. Atualizar Termux e Instalar Dependências
+echo ">>> [1/5] Atualizando sistema..."
+pkg update -y && pkg upgrade -y
+pkg install python git rust binutils build-essential cmake clang libopenblas libandroid-execinfo ffmpeg wget tar -y
 
-# CARREGAR MODELOS
-print(">>> Carregando Whisper...")
-whisper = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+# 2. Configurar Python
+echo ">>> [2/5] Criando ambiente virtual..."
+if [ ! -d "venv" ]; then
+    python -m venv venv
+fi
+source venv/bin/activate
 
-print(">>> Carregando Llama-3...")
-llm = Llama(model_path=MODEL_PATH, n_ctx=2048, n_gpu_layers=-1, verbose=False)
+# 3. Instalar Bibliotecas
+echo ">>> [3/5] Instalando bibliotecas..."
+pip install --upgrade pip
+pip install -r requirements.txt
 
-def falar_piper(texto):
-    output_file = "resposta.wav"
-    texto_limpo = re.sub(r'[^a-zA-Z0-9 .,?!]', '', texto)
-    cmd = f'echo "{texto_limpo}" | {PIPER_BINARY} --model {VOICE_MODEL} --output_file {output_file}'
-    subprocess.run(cmd, shell=True)
-    return output_file
+echo ">>> Compilando Llama.cpp (Isso demora uns 5-10 min)..."
+CMAKE_ARGS="-DGGML_OPENBLAS=on" pip install llama-cpp-python --force-reinstall --upgrade --no-cache-dir
 
-def analisar(audio):
-    if not audio: return "Sem áudio.", None
+# 4. Baixar Modelos
+echo ">>> [4/5] Baixando IA e Voz (5GB total)..."
+mkdir -p models/piper
 
-    # 1. Transcrever
-    segments, _ = whisper.transcribe(audio, beam_size=5)
-    user_text = " ".join([s.text for s in segments]).strip()
-    if len(user_text) < 2: return "Não entendi.", None
+# Llama-3 (Cérebro)
+if [ ! -f "models/llama-3-8b.gguf" ]; then
+    echo "Baixando Llama-3..."
+    wget https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf -O models/llama-3-8b.gguf
+fi
 
-    # 2. Analisar com IA
-    prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are a strict English Tutor. Analyze the user sentence.
-Output JSON ONLY: {{"reply": "response", "has_error": true/false, "correction": "fix", "explanation": "reason", "error_type": "grammar"}}
-<|eot_id|><|start_header_id|>user<|end_header_id|>
-{user_text}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
+# Piper (Motor de Voz)
+if [ ! -f "models/piper/piper" ]; then
+    echo "Baixando motor de voz Piper..."
+    wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_aarch64.tar.gz
+    tar -xvf piper_linux_aarch64.tar.gz -C models/
+    # Ajuste de pasta se necessário
+    if [ -d "models/piper_linux_aarch64" ]; then
+        mv models/piper_linux_aarch64/* models/piper/
+        rmdir models/piper_linux_aarch64
+    fi
+fi
 
-    output = llm(prompt, max_tokens=256, stop=["<|eot_id|>"], echo=False)
-    raw = output['choices'][0]['text']
+# Voz da Amy
+if [ ! -f "models/piper/en_US-amy-medium.onnx" ]; then
+    echo "Baixando voz (Amy)..."
+    wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx -O models/piper/en_US-amy-medium.onnx
+    wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json -O models/piper/en_US-amy-medium.onnx.json
+fi
 
-    try:
-        json_str = raw[raw.find('{'):raw.rfind('}')+1]
-        data = json.loads(json_str)
-        reply = data['reply']
-        if data['has_error']:
-            reply += f"\n\nCorrection: {data['correction']} ({data['explanation']})"
-            c.execute("INSERT INTO logs (user_text, correction, explanation, error_type, timestamp) VALUES (?,?,?,?,?)", 
-                      (user_text, data['correction'], data['explanation'], data['error_type'], datetime.datetime.now()))
-            conn.commit()
-    except:
-        reply = "I heard you, but I couldn't check the grammar perfectly. Let's continue."
+# Criar atalho de inicialização
+echo '#!/bin/bash
+source venv/bin/activate
+python app.py' > start.sh
+chmod +x start.sh
 
-    # 3. Falar
-    audio_resp = falar_piper(reply)
-    return f"You: {user_text}\nAI: {reply}", audio_resp
-
-with gr.Blocks(title="Echo Tutor") as demo:
-    gr.Markdown("# 🇧🇷 Echo Tutor S23")
-    with gr.Row():
-        inp = gr.Audio(sources=["microphone"], type="filepath", label="Fale")
-        out = gr.Audio(autoplay=True, label="Professor")
-    txt = gr.Textbox(label="Correção")
-    inp.change(analisar, inp, [txt, out])
-
-demo.launch(server_name="0.0.0.0", server_port=7860)
+echo ">>> ✅ INSTALAÇÃO CONCLUÍDA! Digite: ./start.sh"
