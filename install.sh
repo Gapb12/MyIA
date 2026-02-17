@@ -2,7 +2,7 @@
 set -e
 
 echo "================================================"
-echo "🚀 INSTALANDO ECHO TUTOR (TERMUX OTIMIZADO)"
+echo "🚀 INSTALANDO ECHO TUTOR (TERMUX S23 ULTRA)"
 echo "================================================"
 
 # =========================
@@ -14,16 +14,25 @@ if [ "$PREFIX" != "/data/data/com.termux/files/usr" ]; then
 fi
 
 # =========================
-# 1. Atualizar pacotes essenciais
+# 1. Pacotes essenciais
 # =========================
 echo ">>> [1/6] Instalando dependências base..."
 
 pkg update -y
-pkg install -y python git ffmpeg wget tar clang cmake \
-libopenblas pkg-config
+pkg install -y \
+python \
+git \
+ffmpeg \
+wget \
+tar \
+clang \
+cmake \
+libopenblas \
+pkg-config \
+python-numpy
 
 # =========================
-# 2. Criar ambiente virtual
+# 2. Ambiente virtual
 # =========================
 echo ">>> [2/6] Criando ambiente virtual..."
 
@@ -35,12 +44,9 @@ source venv/bin/activate
 pip install --upgrade pip setuptools wheel
 
 # =========================
-# 3. Instalar dependências Python
+# 3. Dependências Python
 # =========================
 echo ">>> [3/6] Instalando dependências Python..."
-
-# NumPy via Termux (evita build manual)
-pkg install -y python-numpy
 
 pip install \
 gradio \
@@ -48,24 +54,24 @@ soundfile \
 thefuzz \
 python-Levenshtein \
 requests \
-onnxruntime==1.17.0 \
+onnxruntime==1.16.3 \
 ctranslate2==4.3.1 \
 tokenizers==0.13.3 --only-binary=:all: \
 faster-whisper==1.0.3 \
 huggingface-hub
 
 # =========================
-# 4. Compilar llama-cpp-python otimizado
+# 4. Llama.cpp otimizado
 # =========================
 echo ">>> [4/6] Instalando llama-cpp-python otimizado..."
 
-export CMAKE_ARGS="-DGGML_OPENBLAS=on"
+export CMAKE_ARGS="-DGGML_OPENBLAS=on -DGGML_NATIVE=on"
 export FORCE_CMAKE=1
 
 pip install llama-cpp-python --no-cache-dir
 
 # =========================
-# 5. Baixar modelos
+# 5. Modelos
 # =========================
 echo ">>> [5/6] Baixando modelos..."
 
@@ -78,26 +84,30 @@ if [ ! -f "models/llama-3-8b.gguf" ]; then
     -O models/llama-3-8b.gguf
 fi
 
-# Piper
+# Piper Engine
 if [ ! -f "models/piper/piper" ]; then
+    echo "Baixando Piper..."
     wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_aarch64.tar.gz
     tar -xvf piper_linux_aarch64.tar.gz -C models/
     rm piper_linux_aarch64.tar.gz
+
     mv models/piper_linux_aarch64/* models/piper/
     rmdir models/piper_linux_aarch64
     chmod +x models/piper/piper
 fi
 
-# Voz
+# Voz Amy
 if [ ! -f "models/piper/en_US-amy-medium.onnx" ]; then
+    echo "Baixando voz Amy..."
     wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx \
     -O models/piper/en_US-amy-medium.onnx
+
     wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json \
     -O models/piper/en_US-amy-medium.onnx.json
 fi
 
 # =========================
-# 6. Criar start.sh
+# 6. start.sh
 # =========================
 echo ">>> [6/6] Criando start.sh..."
 
