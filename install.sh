@@ -36,9 +36,14 @@ pip install --upgrade pip wheel setuptools
 # 3. Instalar libs base
 # =========================
 echo ">>> [3/7] Instalando libs base..."
-pip install numpy
-pip install "av>=13.0.0" --no-binary av
-pip install gradio soundfile thefuzz[similarity] python-Levenshtein requests
+
+export PIP_NO_BUILD_ISOLATION=1
+export PIP_USE_PEP517=0
+
+pkg install python-numpy -y
+
+pip install av==12.3.0
+pip install gradio soundfile thefuzz python-Levenshtein requests
 pip install onnxruntime==1.17.0
 
 # =========================
