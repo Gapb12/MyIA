@@ -71,12 +71,11 @@ echo ">>> [5/6] Baixando modelos..."
 
 mkdir -p models/piper
 
-# 🔥 Recomendo modelo menor para celular
-# 3B roda muito melhor que 8B
-if [ ! -f "models/llama-3-3b.gguf" ]; then
-    echo "Baixando Llama 3 3B Q4..."
-    wget https://huggingface.co/bartowski/Meta-Llama-3-3B-Instruct-GGUF/resolve/main/Meta-Llama-3-3B-Instruct-Q4_K_M.gguf \
-    -O models/llama-3-3b.gguf
+# 🔥 Llama 3 8B Q4_K_M (qualidade máxima)
+if [ ! -f "models/llama-3-8b.gguf" ]; then
+    echo "Baixando Llama 3 8B Q4_K_M..."
+    wget https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf \
+    -O models/llama-3-8b.gguf
 fi
 
 # Piper
