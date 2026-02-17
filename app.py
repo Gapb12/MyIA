@@ -8,7 +8,8 @@ import datetime
 import re
 from thefuzz import fuzz
 
-MODEL_PATH = "models/llama-3-8b.gguf"
+MODEL_PATH = "models/llama-3-3b.gguf"
+
 PIPER_BINARY = "./models/piper/piper"
 VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
 DB_NAME = "echo_tutor.db"
