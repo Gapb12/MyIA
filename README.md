@@ -10,7 +10,7 @@ Um tutor de inglês que roda 100% offline no Android via Termux, utilizando Llam
 ## Instalação Rápida (One-Command)
 
 1. Abra o Termux.
-   '''
+   ```bash
    pkg update -y && pkg upgrade -y
 pkg install git -y
 3. Clone este repositório:
