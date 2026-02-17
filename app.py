@@ -65,10 +65,14 @@ whisper = WhisperModel("small.en", device="cpu", compute_type="int8")
 
 llm = Llama(
     model_path=MODEL_PATH,
-    n_ctx=2048,
-    n_gpu_layers=-1,
+    n_ctx=4096,
+    n_threads=8,
+    n_batch=512,
+    n_gpu_layers=0,
+    use_mlock=False,
     verbose=False
 )
+
 
 # ==========================
 # UTILITIES
