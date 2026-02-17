@@ -12,5 +12,5 @@ Um tutor de inglês que roda 100% offline no Android via Termux, utilizando Llam
 1. Abra o Termux.
 2. Clone este repositório:
    ```bash
-   git clone [https://github.com/SEU_USUARIO/echo-tutor.git](https://github.com/SEU_USUARIO/echo-tutor.git)
-   cd echo-tutor
+   git clone [https://github.com/Gapb12/MyIA]
+   cd MyIA
