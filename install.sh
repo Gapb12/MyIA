@@ -17,27 +17,29 @@ fi
 # 1. Atualizar pacotes
 # =========================
 echo ">>> [1/6] Atualizando pacotes..."
+
 pkg update -y
+pkg upgrade -y
+
 pkg install -y \
-python \
+python311 \
 git \
 wget \
 tar \
 clang \
 cmake \
 libopenblas \
-pkg-config
+pkg-config \
+ffmpeg
 
 # =========================
-# 2. Criar ambiente virtual
+# 2. Criar ambiente virtual (Python 3.11)
 # =========================
 echo ">>> [2/6] Criando ambiente virtual..."
 
-if [ -d "venv" ]; then
-  rm -rf venv
-fi
+rm -rf venv
 
-python -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
 
 pip install --upgrade pip wheel setuptools
@@ -48,20 +50,24 @@ pip install --upgrade pip wheel setuptools
 echo ">>> [3/6] Instalando dependências Python..."
 
 export PIP_NO_BUILD_ISOLATION=1
-export PIP_USE_PEP517=0
-
-pkg install -y python-numpy
 
 pip install \
+numpy \
 gradio \
 soundfile \
 thefuzz \
 python-Levenshtein \
 requests \
-ctranslate2==4.3.1 \
-tokenizers==0.13.3 --only-binary=:all: \
-faster-whisper==1.0.3 \
 huggingface-hub
+
+# instalar tokenizers primeiro
+pip install tokenizers==0.13.3 --only-binary=:all:
+
+# instalar ctranslate2 compatível
+pip install ctranslate2==4.3.1
+
+# faster-whisper
+pip install faster-whisper==1.0.3
 
 # =========================
 # 4. Compilar llama-cpp-python otimizado
@@ -103,6 +109,7 @@ if [ ! -f "models/piper/en_US-amy-medium.onnx" ]; then
   echo "Baixando voz Amy..."
   wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx \
   -O models/piper/en_US-amy-medium.onnx
+
   wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json \
   -O models/piper/en_US-amy-medium.onnx.json
 fi
