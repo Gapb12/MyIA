@@ -2,7 +2,7 @@
 set -e
 
 echo "================================================"
-echo "🚀 INSTALANDO ECHO TUTOR (TERMUX ARM64 ESTÁVEL)"
+echo "🚀 INSTALANDO ECHO TUTOR (TERMUX ARM64 COMPLETO)"
 echo "================================================"
 
 # =========================
@@ -14,26 +14,32 @@ if [ "$PREFIX" != "/data/data/com.termux/files/usr" ]; then
 fi
 
 # =========================
-# 1. Atualizar sistema
+# 1. Atualizar repositório
 # =========================
 echo ">>> [1/7] Atualizando Termux..."
 pkg update -y
-pkg upgrade -y
 
 # =========================
-# 2. Instalar dependências nativas
+# 2. Instalar toolchain COMPLETA
 # =========================
-echo ">>> [2/7] Instalando dependências base..."
+echo ">>> [2/7] Instalando toolchain completa..."
 
 pkg install -y \
 python \
 git \
 wget \
-ffmpeg \
+tar \
 clang \
+make \
 cmake \
+ninja \
+patchelf \
+autoconf \
+automake \
+libtool \
+pkg-config \
 libopenblas \
-pkg-config
+ffmpeg
 
 # =========================
 # 3. Criar ambiente virtual
@@ -47,32 +53,32 @@ fi
 python -m venv venv
 source venv/bin/activate
 
-pip install --upgrade pip setuptools wheel
+pip install --upgrade pip wheel setuptools
 
 # =========================
-# 4. Instalar dependências Python
+# 4. Instalar NumPy via Termux (evita build)
 # =========================
-echo ">>> [4/7] Instalando dependências Python..."
+echo ">>> [4/7] Instalando NumPy otimizado..."
+pkg install -y python-numpy
+
+# =========================
+# 5. Instalar dependências Python
+# =========================
+echo ">>> [5/7] Instalando dependências Python..."
+
+export CMAKE_ARGS="-DGGML_OPENBLAS=on -DGGML_NATIVE=on"
+export FORCE_CMAKE=1
 
 pip install \
-numpy \
 gradio \
 soundfile \
 thefuzz \
 python-Levenshtein \
 requests \
+tokenizers==0.13.3 \
 huggingface-hub \
-openai-whisper
-
-# =========================
-# 5. Compilar llama-cpp-python
-# =========================
-echo ">>> [5/7] Compilando llama-cpp-python (OpenBLAS + Native)..."
-
-export CMAKE_ARGS="-DGGML_OPENBLAS=on -DGGML_NATIVE=on"
-export FORCE_CMAKE=1
-
-pip install llama-cpp-python --no-cache-dir
+llama-cpp-python \
+faster-whisper
 
 # =========================
 # 6. Baixar modelos
@@ -81,11 +87,11 @@ echo ">>> [6/7] Baixando modelos..."
 
 mkdir -p models/piper
 
-# Llama 3 8B Q4_K_S
-if [ ! -f "models/llama-3-8b.gguf" ]; then
-  echo "Baixando Llama 3 8B..."
-  wget https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_S.gguf \
-  -O models/llama-3-8b.gguf
+# 🔥 RECOMENDO 3B NO ANDROID
+if [ ! -f "models/llama-3-3b.gguf" ]; then
+  echo "Baixando Llama 3 3B Q4_K_M..."
+  wget https://huggingface.co/bartowski/Meta-Llama-3-3B-Instruct-GGUF/resolve/main/Meta-Llama-3-3B-Instruct-Q4_K_M.gguf \
+  -O models/llama-3-3b.gguf
 fi
 
 # Piper
@@ -113,7 +119,6 @@ echo ">>> [7/7] Criando start.sh..."
 
 cat <<EOF > start.sh
 #!/bin/bash
-cd \$(dirname "\$0")
 source venv/bin/activate
 python app.py
 EOF
@@ -123,6 +128,7 @@ chmod +x start.sh
 echo ""
 echo "================================================"
 echo "✅ INSTALAÇÃO CONCLUÍDA"
-echo "Execute:"
+echo ""
+echo "Para iniciar:"
 echo "./start.sh"
 echo "================================================"
