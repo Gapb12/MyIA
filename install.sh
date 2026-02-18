@@ -1,128 +1,128 @@
-#!/bin/bash
-set -e
-echo "================================================"
-echo "🚀 INSTALANDO ECHO TUTOR - VERSÃO LIMPA E FINAL (COM FASTER-WHISPER)"
-echo "================================================"
-# 1. Atualizar repositório
-echo ">>> [1/9] Atualizando Termux..."
-pkg update -y
-# 2. Instalando pacotes do Termux necessários
-echo ">>> [2/9] Instalando pacotes do Termux..."
-pkg install -y \
-  python \
-  git \
-  wget \
-  tar \
-  clang \
-  make \
-  cmake \
-  ninja \
-  patchelf \
-  autoconf \
-  automake \
-  libtool \
-  pkg-config \
-  libopenblas \
-  ffmpeg \
-  python-numpy \
-  libsndfile \
-  rust
-# 3. Limpando caches para evitar problemas de build
-echo ">>> [3/9] Limpando caches..."
-rm -rf ~/.cache/pip ~/.cargo/registry/cache ~/.cargo/git
-# 4. Criando venv novo
-echo ">>> [4/9] Criando venv novo..."
-rm -rf venv
-python -m venv venv --system-site-packages
-source venv/bin/activate
-pip install --upgrade pip wheel setuptools --no-cache-dir
-# Instalar huggingface-hub em versão sem hf-xet
-pip install huggingface-hub==0.30.2 --no-cache-dir
-# 5. Instalando Gradio e dependências essenciais
-echo ">>> [5/9] Instalando Gradio mínimo + client..."
-pip install gradio --no-deps --no-cache-dir --no-build-isolation
-pip install gradio-client --no-cache-dir
-pip install httpx jinja2 markupsafe numpy pydantic fastapi uvicorn aiofiles altair pillow pydub typing-extensions thefuzz --no-cache-dir
-# 6. Instalando STT (faster-whisper) e TTS
-echo ">>> [6/9] Instalando STT e TTS..."
-pip install cython --no-cache-dir
-pip install faster-whisper --no-build-isolation --no-cache-dir
-pip install piper-tts --no-deps --no-cache-dir
-# 7. Instalando Llama.cpp
-echo ">>> [7/9] Instalando Llama.cpp..."
-export CMAKE_ARGS="-DGGML_OPENBLAS=on -DGGML_NATIVE=on -DGGML_NO_OPENMP=ON"
-export FORCE_CMAKE=1
-pip install llama-cpp-python --force-reinstall --no-cache-dir
-# 8. Baixar modelos
-echo ">>> [8/9] Baixando modelos..."
-mkdir -p models/piper
-# Llama 3B leve
-if [ ! -f "models/llama-3-3b.gguf" ]; then
-  echo "Baixando Llama-3-3B-Instruct Q4_K_M..."
-  wget https://huggingface.co/bartowski/Meta-Llama-3-3B-Instruct-GGUF/resolve/main/Meta-Llama-3-3B-Instruct-Q4_K_M.gguf -O models/llama-3-3b.gguf
-fi
-# Piper binary
-if [ ! -f "models/piper/piper" ]; then
-  echo "Baixando Piper binary..."
-  wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_aarch64.tar.gz
-  tar -xvf piper_linux_aarch64.tar.gz -C models/
-  rm piper_linux_aarch64.tar.gz
-  mv models/piper_linux_aarch64/* models/piper/
-  rmdir models/piper_linux_aarch64
-  chmod +x models/piper/piper
-fi
-# Voz Amy
-if [ ! -f "models/piper/en_US-amy-medium.onnx" ]; then
-  echo "Baixando voz Amy..."
-  wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx -O models/piper/en_US-amy-medium.onnx
-  wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json -O models/piper/en_US-amy-medium.onnx.json
-fi
-# 9. Testes finais
-echo ">>> [9/9] Testando imports críticos..."
-python -c "
-try:
-    import gradio
-    print('Gradio OK')
-except:
-    print('Gradio falhou')
-try:
-    import gradio_client
-    print('Gradio Client OK')
-except:
-    print('Gradio Client falhou')
-try:
-    from faster_whisper import WhisperModel
-    print('Faster Whisper OK')
-except:
-    print('Faster Whisper falhou')
-try:
-    import piper_tts
-    print('Piper OK')
-except:
-    print('Piper falhou')
-try:
-    import llama_cpp
-    print('Llama OK')
-except:
-    print('Llama falhou')
-try:
-    from thefuzz import fuzz
-    print('Thefuzz OK')
-except:
-    print('Thefuzz falhou')
-print('Teste concluído')
-"
-# Criar start.sh
-echo ">>> Criando start.sh..."
-cat <<EOF > start.sh
-#!/bin/bash
-source venv/bin/activate
-python app.py
-EOF
-chmod +x start.sh
-echo ""
-echo "================================================"
-echo "✅ INSTALAÇÃO LIMPA COMPLETA!"
-echo "Rode ./start.sh para iniciar"
-echo "Acesse http://127.0.0.1:7860 no navegador do celular"
-echo "================================================"
+import gradio as gr
+import whisper
+from llama_cpp import Llama
+import subprocess
+import json
+import sqlite3
+import datetime
+import re
+from thefuzz import fuzz
+
+MODEL_PATH = "models/llama-3-3b.gguf"
+PIPER_BINARY = "./models/piper/piper"
+VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
+DB_NAME = "echo_tutor.db"
+SIMILARITY_THRESHOLD = 90
+
+# DATABASE
+conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+c = conn.cursor()
+c.execute("""
+CREATE TABLE IF NOT EXISTS learning_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    user_input TEXT,
+    corrected_version TEXT,
+    error_type TEXT,
+    sub_type TEXT,
+    explanation TEXT,
+    review_count INTEGER DEFAULT 0,
+    next_review_date DATETIME
+)
+""")
+conn.commit()
+
+# MODELS
+whisper_model = whisper.load_model("base.en")
+llm = Llama(
+    model_path=MODEL_PATH,
+    n_ctx=2048,
+    n_threads=4,
+    n_batch=512,
+    n_gpu_layers=0,
+    verbose=True
+)
+
+# TTS
+def falar(texto):
+    texto = re.sub(r'[^a-zA-Z0-9 .,?!]', '', texto)
+    file = f"tts_{int(datetime.datetime.now().timestamp())}.wav"
+    cmd = f'echo "{texto}" | {PIPER_BINARY} --model {VOICE_MODEL} --output_file {file}'
+    try:
+        subprocess.run(cmd, shell=True, check=True)
+        return file
+    except subprocess.CalledProcessError as e:
+        print(f"Erro no Piper: {e}")
+        return None
+
+# ANALYSIS
+def analisar(audio_path):
+    if not audio_path:
+        return "No audio.", None
+    result = whisper_model.transcribe(audio_path)
+    user_text = result["text"].strip()
+    print(f"Transcrito: {user_text}")
+    system_prompt = """
+You are a strict English tutor.
+Return ONLY JSON:
+{
+  "reply": "",
+  "has_error": true/false,
+  "correction": "",
+  "error_type": "",
+  "sub_type": "",
+  "explanation": ""
+}
+"""
+    prompt = f"{system_prompt}\nUser: {user_text}\nAssistant:"
+    try:
+        output = llm(prompt, max_tokens=256, stop=["}"])
+        raw = output['choices'][0]['text']
+        data = json.loads(raw + "}" if not raw.endswith("}") else raw) # Fix JSON incompleto
+    except Exception as e:
+        print(f"Erro no LLM: {e}")
+        return str(e), None
+    reply = data["reply"]
+    if data["has_error"]:
+        c.execute("""
+        INSERT INTO learning_logs
+        (user_input, corrected_version, error_type, sub_type, explanation, next_review_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            user_text,
+            data["correction"],
+            data["error_type"],
+            data["sub_type"],
+            data["explanation"],
+            datetime.datetime.now() + datetime.timedelta(days=1)
+        ))
+        conn.commit()
+        reply += f"\nCorrection: {data['correction']}"
+    return f"You: {user_text}\nAI: {reply}", falar(reply)
+
+# UI com aba para Drill (simples)
+def review_errors():
+    c.execute("SELECT * FROM learning_logs WHERE next_review_date <= DATETIME('now')")
+    errors = c.fetchall()
+    if not errors:
+        return "No errors to review."
+    reply = ""
+    for error in errors:
+        reply += f"User: {error[2]}\nCorrection: {error[3]}\nExplanation: {error[6]}\n---\n"
+    return reply, falar(reply)
+
+with gr.Blocks(title="Echo Tutor") as demo:
+    gr.Markdown("# Echo Tutor – Adaptive English")
+    with gr.Tab("Conversação"):
+        inp = gr.Audio(sources=["microphone"], type="filepath")
+        out_txt = gr.Textbox()
+        out_aud = gr.Audio(autoplay=True)
+        gr.Button("Send").click(analisar, inp, [out_txt, out_aud])
+    with gr.Tab("Review Erros"):
+        review_btn = gr.Button("Carregar Erros")
+        review_txt = gr.Textbox()
+        review_aud = gr.Audio(autoplay=True)
+        review_btn.click(review_errors, outputs=[review_txt, review_aud])
+
+if __name__ == "__main__":
+    demo.launch(server_name="0.0.0.0", server_port=7860)
