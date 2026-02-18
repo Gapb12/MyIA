@@ -8,7 +8,7 @@ import datetime
 import re
 from thefuzz import fuzz
 
-MODEL_PATH = "models/llama-3-3b.gguf"  # Use o leve 3B
+MODEL_PATH = "models/llama-3-3b.gguf"
 PIPER_BINARY = "./models/piper/piper"
 VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
 DB_NAME = "echo_tutor.db"
@@ -33,14 +33,14 @@ CREATE TABLE IF NOT EXISTS learning_logs (
 conn.commit()
 
 # MODELS
-whisper_model = WhisperModel("base.en", device="cpu", compute_type="int8")  # Mais eficiente
+whisper_model = WhisperModel("base.en", device="cpu", compute_type="int8")
 llm = Llama(
     model_path=MODEL_PATH,
-    n_ctx=2048,  # Reduzi para caber melhor
-    n_threads=4,  # 4 threads para Snapdragon sem aquecer
+    n_ctx=2048,
+    n_threads=4,
     n_batch=512,
     n_gpu_layers=0,
-    verbose=True  # Ative verbose para debug erros
+    verbose=True
 )
 
 # TTS
@@ -52,7 +52,7 @@ def falar(texto):
         subprocess.run(cmd, shell=True, check=True)
         return file
     except subprocess.CalledProcessError as e:
-        print(f"Erro no Piper: {e}")  # Debug
+        print(f"Erro no Piper: {e}")
         return None
 
 # ANALYSIS
@@ -60,8 +60,8 @@ def analisar(audio_path):
     if not audio_path:
         return "No audio.", None
     segments, info = whisper_model.transcribe(audio_path)
-    user_text = " ".join([s.text.strip() for s in segments]).strip()
-    print(f"Transcrito: {user_text}")  # Debug
+    user_text = " ".join(segment.text.strip() for segment in segments)
+    print(f"Transcrito: {user_text}")
     system_prompt = """
 You are a strict English tutor.
 Return ONLY JSON:
@@ -76,11 +76,11 @@ Return ONLY JSON:
 """
     prompt = f"{system_prompt}\nUser: {user_text}\nAssistant:"
     try:
-        output = llm(prompt, max_tokens=256)
+        output = llm(prompt, max_tokens=256, stop=["}"])
         raw = output['choices'][0]['text']
-        data = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
+        data = json.loads(raw + "}" if not raw.endswith("}") else raw)  # Fix JSON incompleto
     except Exception as e:
-        print(f"Erro no LLM: {e}")  # Debug
+        print(f"Erro no LLM: {e}")
         return str(e), None
     reply = data["reply"]
     if data["has_error"]:
@@ -94,19 +94,35 @@ Return ONLY JSON:
             data["error_type"],
             data["sub_type"],
             data["explanation"],
-            datetime.datetime.now() + datetime.timedelta(days=1)  # Inicial SRS
+            datetime.datetime.now() + datetime.timedelta(days=1)
         ))
         conn.commit()
         reply += f"\nCorrection: {data['correction']}"
     return f"You: {user_text}\nAI: {reply}", falar(reply)
 
-# UI
+# UI com aba para Drill (simples)
+def review_errors():
+    c.execute("SELECT * FROM learning_logs WHERE next_review_date <= DATETIME('now')")
+    errors = c.fetchall()
+    if not errors:
+        return "No errors to review."
+    reply = ""
+    for error in errors:
+        reply += f"User: {error[2]}\nCorrection: {error[3]}\nExplanation: {error[6]}\n---\n"
+    return reply, falar(reply)
+
 with gr.Blocks(title="Echo Tutor") as demo:
     gr.Markdown("# Echo Tutor – Adaptive English")
-    inp = gr.Audio(sources=["microphone"], type="filepath")
-    out_txt = gr.Textbox()
-    out_aud = gr.Audio(autoplay=True)
-    gr.Button("Send").click(analisar, inp, [out_txt, out_aud])
+    with gr.Tab("Conversação"):
+        inp = gr.Audio(sources=["microphone"], type="filepath")
+        out_txt = gr.Textbox()
+        out_aud = gr.Audio(autoplay=True)
+        gr.Button("Send").click(analisar, inp, [out_txt, out_aud])
+    with gr.Tab("Review Erros"):
+        review_btn = gr.Button("Carregar Erros")
+        review_txt = gr.Textbox()
+        review_aud = gr.Audio(autoplay=True)
+        review_btn.click(review_errors, outputs=[review_txt, review_aud])
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7860)
