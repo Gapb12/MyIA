@@ -45,7 +45,7 @@ pip install --upgrade pip wheel setuptools --no-cache-dir
 # 5. Instalando Gradio e dependências essenciais
 echo ">>> [5/9] Instalando Gradio mínimo + client..."
 pip install gradio --no-deps --no-cache-dir --no-build-isolation
-pip install gradio-client==2.1.0 --no-cache-dir
+pip install gradio-client --no-cache-dir
 pip install httpx jinja2 markupsafe numpy pydantic fastapi uvicorn aiofiles altair pillow pydub typing-extensions --no-cache-dir
 
 # 6. Instalando STT (openai-whisper - fallback sem Rust) e TTS
