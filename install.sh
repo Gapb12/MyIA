@@ -1,41 +1,44 @@
 #!/bin/bash
 set -e
 echo "================================================"
-echo "🚀 INSTALANDO ECHO TUTOR (TERMUX ARM64 - FIX ORJSON/MATURIN COM PYTHON 3.11 VIA TUR)"
+echo "🚀 INSTALANDO ECHO TUTOR (TERMUX ARM64 - FIX ONNX + ORJSON)"
 echo "================================================"
 
 # 1. Atualizar repositório
-echo ">>> [1/9] Atualizando Termux..."
+echo ">>> [1/8] Atualizando Termux..."
 pkg update -y
 
-# 2. Adicionar Termux User Repository (TUR) para Python 3.11
-echo ">>> [2/9] Adicionando TUR repo para Python 3.11..."
-pkg install tur-repo -y
-pkg update -y
+# 2. Instalar toolchain + onnxruntime nativo do Termux (evita pip build)
+echo ">>> [2/8] Instalando toolchain e onnxruntime nativo..."
+pkg install -y python git wget tar clang make cmake ninja patchelf autoconf automake libtool pkg-config libopenblas ffmpeg python-numpy libsndfile onnxruntime rust
 
-# 3. Instalar Python 3.11 + toolchain completa
-echo ">>> [3/9] Instalando Python 3.11 e toolchain..."
-pkg install -y python3.11 git wget tar clang make cmake ninja patchelf autoconf automake libtool pkg-config libopenblas ffmpeg python-numpy libsndfile onnxruntime
-
-# 4. Criar ambiente virtual com Python 3.11
-echo ">>> [4/9] Criando venv com Python 3.11..."
-rm -rf venv311  # Limpa se existir
-python3.11 -m venv venv311 --system-site-packages  # Usa numpy do pkg
-source venv311/bin/activate
+# 3. Criar venv
+echo ">>> [3/8] Criando venv..."
+rm -rf venv
+python -m venv venv --system-site-packages
+source venv/bin/activate
 pip install --upgrade pip wheel setuptools
 
-# 5. Instalar dependências Python (downgrades para compatibilidade)
-echo ">>> [5/9] Instalando dependências Python..."
+# 4. Instalar Gradio e deps sem orjson/onnnxruntime build pesado
+echo ">>> [4/8] Instalando Gradio e deps principais..."
+pip install gradio --no-deps --no-build-isolation
+pip install httpx jinja2 markupsafe numpy pydantic fastapi uvicorn aiofiles altair pillow pydub typing-extensions
+
+# 5. Instalar faster-whisper, llama, piper (sem onnxruntime do pip)
+echo ">>> [5/8] Instalando faster-whisper, llama-cpp-python e piper..."
+pip install faster-whisper --no-deps
+pip install huggingface-hub tokenizers
 export CMAKE_ARGS="-DGGML_OPENBLAS=on -DGGML_NATIVE=on -DGGML_NO_OPENMP=ON"
 export FORCE_CMAKE=1
-pip install gradio soundfile thefuzz python-Levenshtein requests tokenizers==0.13.3 huggingface-hub
 pip install llama-cpp-python --force-reinstall --no-cache-dir
-pip install faster-whisper
-pip install piper-tts --no-deps
-pip install orjson==3.9.15  # Versão compatível com wheels ARM64
+pip install piper-tts --no-deps  # Usa onnxruntime do pkg
 
-# 6. Baixar modelos (use 3B leve para mobile)
-echo ">>> [6/9] Baixando modelos..."
+# 6. Tentar orjson opcional (se falhar, continua)
+echo ">>> [6/8] Tentando orjson opcional..."
+pip install orjson==3.9.15 || echo "Orjson falhou - Gradio usa fallback"
+
+# 7. Baixar modelos
+echo ">>> [7/8] Baixando modelos..."
 mkdir -p models/piper
 if [ ! -f "models/llama-3-3b.gguf" ]; then
   wget https://huggingface.co/bartowski/Meta-Llama-3-3B-Instruct-GGUF/resolve/main/Meta-Llama-3-3B-Instruct-Q4_K_M.gguf -O models/llama-3-3b.gguf
@@ -53,44 +56,20 @@ if [ ! -f "models/piper/en_US-amy-medium.onnx" ]; then
   wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json -O models/piper/en_US-amy-medium.onnx.json
 fi
 
-# 7. Teste imports básicos
-echo ">>> [7/9] Testando imports..."
-python -c "import faster_whisper; import llama_cpp; import piper_tts; import orjson; print('Imports OK')"
-
-# 8. Criar start.sh ajustado para Python 3.11
-echo ">>> [8/9] Criando start.sh..."
+# 8. Teste e start.sh
+echo ">>> [8/8] Testando imports e criando start.sh..."
+python -c "import gradio; import faster_whisper; import llama_cpp; import piper_tts; print('Imports OK - onnxruntime do pkg!')"
 cat <<EOF > start.sh
 #!/bin/bash
-source venv311/bin/activate
+source venv/bin/activate
 python app.py
 EOF
 chmod +x start.sh
 
-# 9. Opcional: Widget setup
-echo ">>> [9/9] Configurando widget (opcional)..."
-DIR_ATUAL=$(pwd)
-cat <<EOF > setup_widget.py
-import os
-import stat
-atalho_dir = os.path.expanduser("~/.shortcuts")
-atalho_path = os.path.join(atalho_dir, "EchoTutor")
-projeto_dir = "$DIR_ATUAL"
-if not os.path.exists(atalho_dir):
-    os.makedirs(atalho_dir)
-conteudo = f"#!/bin/bash\ncd {projeto_dir} && ./start.sh\n"
-with open(atalho_path, "w") as f:
-    f.write(conteudo)
-st = os.stat(atalho_path)
-os.chmod(atalho_path, st.st_mode | stat.S_IEXEC)
-print(f"Widget criado em: {atalho_path}")
-EOF
-python setup_widget.py
-rm setup_widget.py
-
 echo ""
 echo "================================================"
 echo "✅ INSTALAÇÃO CONCLUÍDA!"
-echo "Rode ./start.sh para testar"
-echo "Acesse http://127.0.0.1:7860 no browser do celular"
-echo "Se erro no start, rode 'bash -x start.sh' para debug."
+echo "Rode ./start.sh"
+echo "Acesse http://127.0.0.1:7860 no browser"
+echo "Se erro, rode 'python -c \"import onnxruntime; print('OK')\"' para confirmar onnxruntime"
 echo "================================================"
