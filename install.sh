@@ -1,3 +1,4 @@
+```bash
 #!/bin/bash
 set -e
 echo "================================================"
@@ -29,7 +30,7 @@ pkg install -y \
   rust
 # 3. Limpando caches para evitar problemas de build
 echo ">>> [3/9] Limpando caches..."
-rm -rf \~/.cache/pip \~/.cargo/registry/cache \~/.cargo/git
+rm -rf ~/.cache/pip ~/.cargo/registry/cache ~/.cargo/git
 # 4. Criando venv novo
 echo ">>> [4/9] Criando venv novo..."
 rm -rf venv
@@ -46,7 +47,7 @@ pip install httpx jinja2 markupsafe numpy pydantic fastapi uvicorn aiofiles alta
 # 6. Instalando STT (openai-whisper) e TTS
 echo ">>> [6/9] Instalando STT e TTS..."
 pip install setuptools-rust --no-cache-dir
-pip install openai-whisper --no-build-isolation --no-cache-dir
+pip install git+https://github.com/openai/whisper.git --no-build-isolation --no-cache-dir
 pip install piper-tts --no-deps --no-cache-dir
 # 7. Instalando Llama.cpp
 echo ">>> [7/9] Instalando Llama.cpp..."
@@ -126,3 +127,4 @@ echo "✅ INSTALAÇÃO LIMPA COMPLETA!"
 echo "Rode ./start.sh para iniciar"
 echo "Acesse http://127.0.0.1:7860 no navegador do celular"
 echo "================================================"
+```
