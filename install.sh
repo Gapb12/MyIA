@@ -35,8 +35,7 @@ echo ">>> [4/9] Criando venv novo..."
 rm -rf venv
 python -m venv venv --system-site-packages
 source venv/bin/activate
-pip install --upgrade pip --no-cache-dir
-pip install setuptools==81.2.0 wheel --no-cache-dir
+pip install --upgrade pip setuptools wheel --no-cache-dir
 # Instalar huggingface-hub em versão sem hf-xet
 pip install huggingface-hub==0.23.4 --no-cache-dir
 # 5. Instalando Gradio e dependências essenciais
