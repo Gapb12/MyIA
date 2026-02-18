@@ -1,4 +1,3 @@
-```bash
 #!/bin/bash
 set -e
 echo "================================================"
@@ -30,13 +29,14 @@ pkg install -y \
   rust
 # 3. Limpando caches para evitar problemas de build
 echo ">>> [3/9] Limpando caches..."
-rm -rf ~/.cache/pip ~/.cargo/registry/cache ~/.cargo/git
+rm -rf \~/.cache/pip \~/.cargo/registry/cache \~/.cargo/git
 # 4. Criando venv novo
 echo ">>> [4/9] Criando venv novo..."
 rm -rf venv
 python -m venv venv --system-site-packages
 source venv/bin/activate
-pip install --upgrade pip setuptools wheel --no-cache-dir
+pip install --upgrade pip wheel --no-cache-dir
+pip install setuptools==81.0.0 --no-cache-dir
 # Instalar huggingface-hub em versão sem hf-xet
 pip install huggingface-hub==0.23.4 --no-cache-dir
 # 5. Instalando Gradio e dependências essenciais
@@ -127,4 +127,3 @@ echo "✅ INSTALAÇÃO LIMPA COMPLETA!"
 echo "Rode ./start.sh para iniciar"
 echo "Acesse http://127.0.0.1:7860 no navegador do celular"
 echo "================================================"
-```
