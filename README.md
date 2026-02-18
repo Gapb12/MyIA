@@ -21,9 +21,4 @@ Um tutor de inglês que roda 100% offline no Android via Termux, utilizando Llam
    ./install.sh
 4.Complete
    ```bash
-   pkg update -y && pkg upgrade -y
-   pkg install git -y
-   git clone ...
-   cd ...
-   chmod +x install.sh
-   ./install.sh
+   ./start.sh
