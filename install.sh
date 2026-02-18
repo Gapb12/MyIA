@@ -45,6 +45,7 @@ pip install gradio-client --no-cache-dir
 pip install httpx jinja2 markupsafe numpy pydantic fastapi uvicorn aiofiles altair pillow pydub typing-extensions thefuzz --no-cache-dir
 # 6. Instalando STT (faster-whisper) e TTS
 echo ">>> [6/9] Instalando STT e TTS..."
+pip install cython --no-cache-dir
 pip install faster-whisper --no-build-isolation --no-cache-dir
 pip install piper-tts --no-deps --no-cache-dir
 # 7. Instalando Llama.cpp
