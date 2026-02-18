@@ -1,91 +1,40 @@
-#!/bin/bash
-set -e
+import gradio as gr
+from llama_cpp import Llama
+import subprocess
+import json
+import sqlite3
+import datetime
+import re
+from thefuzz import fuzz
 
-echo "================================================"
-echo "🚀 INSTALANDO ECHO TUTOR - VERSÃO REVISA DA FINAL (COM OPENAI-WHISPER FALLBACK)"
-echo "================================================"
+MODEL_PATH = "models/llama-3-3b.gguf"
+PIPER_BINARY = "./models/piper/piper"
+VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
+WHISPER_CPP = "~/whisper.cpp/build/bin/main"  # Path para o executável whisper.cpp
+WHISPER_MODEL = "~/whisper.cpp/models/ggml-base.en.bin"
+DB_NAME = "echo_tutor.db"
+SIMILARITY_THRESHOLD = 90
 
-# 1. Atualizar repositório
-echo ">>> [1/9] Atualizando Termux..."
-pkg update -y
+# DATABASE (mesmo)
 
-# 2. Instalando pacotes do Termux
-echo ">>> [2/9] Instalando pacotes do Termux..."
-pkg install -y \
-  python \
-  git \
-  wget \
-  tar \
-  clang \
-  make \
-  cmake \
-  ninja \
-  patchelf \
-  autoconf \
-  automake \
-  libtool \
-  pkg-config \
-  libopenblas \
-  ffmpeg \
-  python-numpy \
-  libsndfile \
-  onnxruntime \
-  rust
+# MODELS (LLM mesmo)
 
-# 3. Limpando caches
-echo ">>> [3/9] Limpando caches..."
-rm -rf ~/.cache/pip ~/.cargo/registry/cache ~/.cargo/git
+# TTS (mesmo)
 
-# 4. Criando venv novo
-echo ">>> [4/9] Criando venv novo..."
-rm -rf venv
-python -m venv venv --system-site-packages
-source venv/bin/activate
-pip install --upgrade pip wheel setuptools --no-cache-dir
+# STT com whisper.cpp
+def analisar(audio_path):
+    if not audio_path:
+        return "No audio.", None
+    # Converta para 16kHz WAV se necessário
+    wav_path = "temp.wav"
+    subprocess.run(["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", wav_path], check=True)
+    # Transcreva com whisper.cpp
+    result = subprocess.run([WHISPER_CPP, "-m", WHISPER_MODEL, "-f", wav_path, "-l", "en"], capture_output=True, text=True)
+    user_text = result.stdout.strip()
+    print(f"Transcrito: {user_text}")
+    # resto do código igual (prompt LLM, DB, TTS)
 
-# 5. Instalando setuptools-rust (para qualquer build residual)
-echo ">>> [5/9] Instalando setuptools-rust..."
-pip install setuptools-rust --no-cache-dir
+# UI (mesmo)
 
-# 6. Instalando Gradio mínimo + client
-echo ">>> [6/9] Instalando Gradio e client..."
-pip install gradio --no-deps --no-cache-dir --no-build-isolation
-pip install gradio-client==2.1.0 --no-cache-dir
-
-# 7. Instalando STT (openai-whisper fallback) e TTS
-echo ">>> [7/9] Instalando STT e TTS..."
-pip install openai-whisper --no-cache-dir
-pip install piper-tts --no-deps --no-cache-dir
-
-# 8. Instalando Llama.cpp
-echo ">>> [8/9] Instalando Llama.cpp..."
-export CMAKE_ARGS="-DGGML_OPENBLAS=on -DGGML_NATIVE=on -DGGML_NO_OPENMP=ON"
-export FORCE_CMAKE=1
-pip install llama-cpp-python --force-reinstall --no-cache-dir
-
-# 9. Baixar modelos e testes
-echo ">>> [9/9] Baixando modelos e testando..."
-# (copia o código de baixar modelos)
-mkdir -p models/piper
-# Llama 3B
-if [ ! -f "models/llama-3-3b.gguf" ]; then
-  wget https://huggingface.co/bartowski/Meta-Llama-3-3B-Instruct-GGUF/resolve/main/Meta-Llama-3-3B-Instruct-Q4_K_M.gguf -O models/llama-3-3b.gguf
-fi
-# Piper e voz
-# ... (copia do seu original)
-
-# Testes
-python -c "import gradio; import gradio_client; import whisper; import piper_tts; import llama_cpp; print('Imports OK')"
-
-# Criar start.sh
-cat <<EOF > start.sh
-#!/bin/bash
-source venv/bin/activate
-python app.py
-EOF
-chmod +x start.sh
-
-echo "================================================"
-echo "✅ INSTALAÇÃO REVISA DA FINALIZADA!"
-echo "Rode ./start.sh"
-echo "================================================"
+if __name__ == "__main__":
+    demo.launch(server_name="0.0.0.0", server_port=7860)
