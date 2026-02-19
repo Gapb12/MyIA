@@ -1,19 +1,18 @@
 #!/bin/bash
 set -e
 echo "================================================"
-echo "🚀 ECHO TUTOR - INSTALAÇÃO FINAL (GRÁDIO 4.44 + WHISPER.CPP)"
+echo "🚀 ECHO TUTOR - INSTALAÇÃO 100% FUNCIONAL (FEVEREIRO 2026)"
 echo "================================================"
 
 echo ">>> [1/8] Atualizando Termux..."
 pkg update -y && pkg upgrade -y
 
-echo ">>> [2/8] Instalando pacotes base..."
-pkg install -y git cmake clang make ffmpeg curl python libsndfile
+echo ">>> [2/8] Instalando pacotes essenciais..."
+pkg install -y git cmake clang make ffmpeg curl python libsndfile \
+  libandroid-spawn ninja patchelf python-numpy
 
-echo ">>> [3/8] Limpando caches Rust/Temp..."
-rm -rf \~/.cargo/registry/cache \~/.cargo/git /tmp/pip* /tmp/tmp* || true
-pkill -f cargo || true
-pkill -f rustc || true
+echo ">>> [3/8] Limpando caches..."
+rm -rf \~/.cache/pip \~/.cargo/registry/cache \~/.cargo/git /tmp/pip* || true
 
 echo ">>> [4/8] Criando venv limpo..."
 rm -rf venv
@@ -22,16 +21,14 @@ source venv/bin/activate
 
 pip install --upgrade pip wheel setuptools --no-cache-dir
 
-echo ">>> [5/8] Forçando versões sem Rust..."
-pip install pydantic==1.10.12 --no-deps --no-cache-dir
-pip install huggingface-hub==0.23.4 --no-deps --no-cache-dir
-pip install gradio==4.44.0 --no-deps --no-cache-dir
-pip install gradio-client==1.5.2 --no-deps --no-cache-dir
+echo ">>> [5/8] Instalando versões estáveis (sem Rust pesado)..."
+pip install pydantic==1.10.12 huggingface-hub==0.23.4 --no-deps --no-cache-dir
+pip install gradio==4.44.0 gradio-client==1.5.2 --no-deps --no-cache-dir
 
 echo ">>> [6/8] Demais dependências..."
-pip install httpx jinja2 markupsafe numpy pydantic fastapi uvicorn aiofiles altair pillow pydub typing-extensions thefuzz --no-cache-dir
+pip install httpx jinja2 markupsafe numpy fastapi uvicorn aiofiles altair pillow pydub typing-extensions thefuzz --no-cache-dir --no-build-isolation
 
-echo ">>> [7/8] Compilando whisper.cpp..."
+echo ">>> [7/8] Compilando whisper.cpp (4-8 minutos)..."
 cd \~
 rm -rf whisper.cpp
 git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git
@@ -41,7 +38,7 @@ bash models/download-ggml-model.sh base.en
 cmake -S . -B build -DGGML_NO_OPENMP=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j2
 
-echo "✅ whisper.cpp pronto!"
+echo "✅ whisper.cpp compilado com sucesso!"
 
 cd \~/MyIA
 
@@ -56,6 +53,7 @@ chmod +x start.sh
 echo ""
 echo "================================================"
 echo "✅ INSTALAÇÃO CONCLUÍDA!"
-echo "Rode: ./start.sh"
-echo "Acesse: http://127.0.0.1:7860 no navegador do celular"
+echo "Agora rode:"
+echo "   ./start.sh"
+echo "Acesse no navegador do celular: http://127.0.0.1:7860"
 echo "================================================"
