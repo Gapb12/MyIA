@@ -7,9 +7,9 @@ echo "================================================"
 echo ">>> [1/8] Atualizando Termux..."
 pkg update -y && pkg upgrade -y
 
-echo ">>> [2/8] Instalando pacotes essenciais..."
+echo ">>> [2/8] Instalando pacotes essenciais + suporte Pillow..."
 pkg install -y git cmake clang make ffmpeg curl python libsndfile \
-  libandroid-spawn ninja patchelf python-numpy
+  libandroid-spawn ninja patchelf python-numpy libjpeg-turbo libpng
 
 echo ">>> [3/8] Limpando caches antigos..."
 rm -rf \~/.cache/pip \~/.cargo/registry/cache \~/.cargo/git /tmp/pip* || true
@@ -21,14 +21,17 @@ source venv/bin/activate
 
 pip install --upgrade pip wheel setuptools --no-cache-dir
 
-echo ">>> [5/8] Instalando versões estáveis (sem Rust pesado)..."
+echo ">>> [5/8] Instalando pybind11 (necessário para Pillow)..."
+pip install pybind11 --no-cache-dir
+
+echo ">>> [6/8] Instalando versões estáveis (sem Rust pesado)..."
 pip install pydantic==1.10.12 huggingface-hub==0.23.4 --no-deps --no-cache-dir
 pip install gradio==4.44.0 gradio-client==1.5.2 --no-deps --no-cache-dir
 
-echo ">>> [6/8] Demais dependências..."
+echo ">>> [7/8] Demais dependências..."
 pip install httpx jinja2 markupsafe numpy fastapi uvicorn aiofiles altair pillow pydub typing-extensions thefuzz --no-cache-dir --no-build-isolation
 
-echo ">>> [7/8] Compilando whisper.cpp (4-8 minutos)..."
+echo ">>> [8/8] Compilando whisper.cpp (4-8 minutos)..."
 cd \~
 rm -rf whisper.cpp
 git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git
@@ -42,7 +45,7 @@ echo "✅ whisper.cpp compilado com sucesso!"
 
 cd \~/MyIA
 
-echo ">>> [8/8] Criando start.sh..."
+echo ">>> Criando start.sh..."
 cat <<EOF > start.sh
 #!/bin/bash
 source venv/bin/activate
