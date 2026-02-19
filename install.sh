@@ -11,7 +11,7 @@ echo ">>> [2/8] Instalando pacotes essenciais..."
 pkg install -y git cmake clang make ffmpeg curl python libsndfile \
   libandroid-spawn ninja patchelf python-numpy
 
-echo ">>> [3/8] Limpando caches..."
+echo ">>> [3/8] Limpando caches antigos..."
 rm -rf \~/.cache/pip \~/.cargo/registry/cache \~/.cargo/git /tmp/pip* || true
 
 echo ">>> [4/8] Criando venv limpo..."
@@ -53,7 +53,6 @@ chmod +x start.sh
 echo ""
 echo "================================================"
 echo "✅ INSTALAÇÃO CONCLUÍDA!"
-echo "Agora rode:"
-echo "   ./start.sh"
+echo "Rode agora: ./start.sh"
 echo "Acesse no navegador do celular: http://127.0.0.1:7860"
 echo "================================================"
