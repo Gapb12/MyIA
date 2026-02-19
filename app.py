@@ -5,13 +5,14 @@ import json
 import sqlite3
 import datetime
 import re
-from thefuzz import fuzz
 import os
+from thefuzz import fuzz
 
-MODEL_PATH = "models/llama-3-3b.gguf"
+MODEL_PATH = "models/phi-3-mini-Q4_K_M.gguf"
 PIPER_BINARY = "./models/piper/piper"
 VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
 DB_NAME = "echo_tutor.db"
+SIMILARITY_THRESHOLD = 90
 
 # DATABASE
 conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -53,32 +54,21 @@ def falar(texto):
         print(f"Erro no Piper: {e}")
         return None
 
-# ANALYSIS com whisper.cpp
+# ANALYSIS
 def analisar(audio_path):
     if not audio_path:
         return "No audio.", None
-
     whisper_bin = os.path.expanduser("\~/whisper.cpp/build/bin/main")
     model_path = os.path.expanduser("\~/whisper.cpp/models/ggml-base.en.bin")
-
-    cmd = [
-        whisper_bin,
-        "-m", model_path,
-        "-f", audio_path,
-        "-l", "en",
-        "-t", "4",          # threads
-        "--no-timestamps"
-    ]
-
+    cmd = [whisper_bin, "-m", model_path, "-f", audio_path, "-l", "en", "-t", "4", "--no-timestamps"]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         user_text = result.stdout.strip()
         print(f"Transcrito: {user_text}")
     except Exception as e:
-        print(f"Erro no whisper.cpp: {e}")
+        print(f"Erro no Whisper: {e}")
         return str(e), None
 
-    # LLM analysis (igual antes)
     system_prompt = """
 You are a strict English tutor.
 Return ONLY JSON:
@@ -95,11 +85,10 @@ Return ONLY JSON:
     try:
         output = llm(prompt, max_tokens=256, stop=["}"])
         raw = output['choices'][0]['text']
-        data = json.loads(raw + "}" if not raw.endswith("}") else raw)
+        data = json.loads(raw + "}" if not raw.endswith("}") else raw) # Fix JSON incompleto
     except Exception as e:
         print(f"Erro no LLM: {e}")
         return str(e), None
-
     reply = data["reply"]
     if data["has_error"]:
         c.execute("""
@@ -116,21 +105,19 @@ Return ONLY JSON:
         ))
         conn.commit()
         reply += f"\nCorrection: {data['correction']}"
-
     return f"You: {user_text}\nAI: {reply}", falar(reply)
 
-# Review errors (igual antes)
+# UI com aba para Drill (simples)
 def review_errors():
     c.execute("SELECT * FROM learning_logs WHERE next_review_date <= DATETIME('now')")
     errors = c.fetchall()
     if not errors:
-        return "No errors to review.", None
+        return "No errors to review."
     reply = ""
     for error in errors:
         reply += f"User: {error[2]}\nCorrection: {error[3]}\nExplanation: {error[6]}\n---\n"
     return reply, falar(reply)
 
-# UI
 with gr.Blocks(title="Echo Tutor") as demo:
     gr.Markdown("# Echo Tutor – Adaptive English")
     with gr.Tab("Conversação"):
@@ -145,4 +132,4 @@ with gr.Blocks(title="Echo Tutor") as demo:
         review_btn.click(review_errors, outputs=[review_txt, review_aud])
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
