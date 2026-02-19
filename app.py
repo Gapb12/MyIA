@@ -1,5 +1,4 @@
 import gradio as gr
-from faster_whisper import WhisperModel
 from llama_cpp import Llama
 import subprocess
 import json
@@ -7,12 +6,12 @@ import sqlite3
 import datetime
 import re
 from thefuzz import fuzz
+import os
 
 MODEL_PATH = "models/llama-3-3b.gguf"
 PIPER_BINARY = "./models/piper/piper"
 VOICE_MODEL = "models/piper/en_US-amy-medium.onnx"
 DB_NAME = "echo_tutor.db"
-SIMILARITY_THRESHOLD = 90
 
 # DATABASE
 conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -33,7 +32,6 @@ CREATE TABLE IF NOT EXISTS learning_logs (
 conn.commit()
 
 # MODELS
-whisper_model = WhisperModel("base.en", device="cpu", compute_type="int8")
 llm = Llama(
     model_path=MODEL_PATH,
     n_ctx=2048,
@@ -55,13 +53,32 @@ def falar(texto):
         print(f"Erro no Piper: {e}")
         return None
 
-# ANALYSIS
+# ANALYSIS com whisper.cpp
 def analisar(audio_path):
     if not audio_path:
         return "No audio.", None
-    segments, info = whisper_model.transcribe(audio_path)
-    user_text = " ".join(segment.text.strip() for segment in segments)
-    print(f"Transcrito: {user_text}")
+
+    whisper_bin = os.path.expanduser("\~/whisper.cpp/build/bin/main")
+    model_path = os.path.expanduser("\~/whisper.cpp/models/ggml-base.en.bin")
+
+    cmd = [
+        whisper_bin,
+        "-m", model_path,
+        "-f", audio_path,
+        "-l", "en",
+        "-t", "4",          # threads
+        "--no-timestamps"
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        user_text = result.stdout.strip()
+        print(f"Transcrito: {user_text}")
+    except Exception as e:
+        print(f"Erro no whisper.cpp: {e}")
+        return str(e), None
+
+    # LLM analysis (igual antes)
     system_prompt = """
 You are a strict English tutor.
 Return ONLY JSON:
@@ -78,10 +95,11 @@ Return ONLY JSON:
     try:
         output = llm(prompt, max_tokens=256, stop=["}"])
         raw = output['choices'][0]['text']
-        data = json.loads(raw + "}" if not raw.endswith("}") else raw)  # Fix JSON incompleto
+        data = json.loads(raw + "}" if not raw.endswith("}") else raw)
     except Exception as e:
         print(f"Erro no LLM: {e}")
         return str(e), None
+
     reply = data["reply"]
     if data["has_error"]:
         c.execute("""
@@ -98,19 +116,21 @@ Return ONLY JSON:
         ))
         conn.commit()
         reply += f"\nCorrection: {data['correction']}"
+
     return f"You: {user_text}\nAI: {reply}", falar(reply)
 
-# UI com aba para Drill (simples)
+# Review errors (igual antes)
 def review_errors():
     c.execute("SELECT * FROM learning_logs WHERE next_review_date <= DATETIME('now')")
     errors = c.fetchall()
     if not errors:
-        return "No errors to review."
+        return "No errors to review.", None
     reply = ""
     for error in errors:
         reply += f"User: {error[2]}\nCorrection: {error[3]}\nExplanation: {error[6]}\n---\n"
     return reply, falar(reply)
 
+# UI
 with gr.Blocks(title="Echo Tutor") as demo:
     gr.Markdown("# Echo Tutor – Adaptive English")
     with gr.Tab("Conversação"):
